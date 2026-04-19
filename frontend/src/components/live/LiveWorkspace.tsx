@@ -28,8 +28,9 @@ export function LiveWorkspace() {
       date_start: dateStart,
       date_end: dateEnd,
       strategies: enabled as string[],
+      active_trend_system: activeTrendSystem,
     };
-  }, [activeId, dateStart, dateEnd, enabled]);
+  }, [activeId, dateStart, dateEnd, enabled, activeTrendSystem]);
 
   const debouncedParams = useDebouncedValue(computeParams, 400);
 

@@ -90,4 +90,5 @@ def compute(req: LiveComputeRequest = Body(...)) -> LiveComputeResult:
         date_start=date_start,
         date_end=date_end,
         strategies=req.strategies,
+        active_trend_system=req.active_trend_system,
     )

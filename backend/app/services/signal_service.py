@@ -47,6 +47,60 @@ def _fig_json(fig: go.Figure) -> dict:
 # ── MA overlay traces ─────────────────────────────────────────────────────────
 
 
+def _ma_crossover_scatter(
+    fast_ma: pd.Series,
+    slow_ma: pd.Series,
+    ds: pd.Timestamp,
+    de: pd.Timestamp,
+) -> go.Scatter | None:
+    """Markers where fast and slow MAs intersect (linear interp in time); green = buy, red = sell."""
+    diff = fast_ma - slow_ma
+    idx = diff.index
+    xs: list[pd.Timestamp] = []
+    ys: list[float] = []
+    colours: list[str] = []
+    for i in range(1, len(idx)):
+        d0 = diff.iloc[i - 1]
+        d1 = diff.iloc[i]
+        if pd.isna(d0) or pd.isna(d1):
+            continue
+        if d0 * d1 >= 0:
+            continue
+        denom = float(d1) - float(d0)
+        if denom == 0:
+            continue
+        f_frac = -float(d0) / denom
+        if f_frac < 0 or f_frac > 1:
+            continue
+        t0, t1 = idx[i - 1], idx[i]
+        t_cross = t0 + (t1 - t0) * f_frac
+        if t_cross < ds or t_cross > de:
+            continue
+        fa0 = float(fast_ma.iloc[i - 1])
+        fa1 = float(fast_ma.iloc[i])
+        y_cross = fa0 + f_frac * (fa1 - fa0)
+        is_buy = d1 > 0
+        xs.append(pd.Timestamp(t_cross))
+        ys.append(y_cross)
+        colours.append(PALETTE["ret1"] if is_buy else PALETTE["down"])
+    if not xs:
+        return None
+    return go.Scatter(
+        x=xs,
+        y=ys,
+        mode="markers",
+        name="MA cross",
+        marker=dict(
+            size=9,
+            color=colours,
+            line=dict(width=1, color="white"),
+            symbol="circle",
+        ),
+        text=[("Buy" if c == PALETTE["ret1"] else "Sell") for c in colours],
+        hovertemplate="%{text}<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+    )
+
+
 def _ma_overlay_traces(
     price_full: pd.Series,
     ds: pd.Timestamp,
@@ -75,9 +129,11 @@ def _ma_overlay_traces(
                 ),
             ]
         else:
-            fast_ma = _ma(price_full, fast, use_ema=False).loc[ds:de]
-            slow_ma = _ma(price_full, slow, use_ema=False).loc[ds:de]
-            return [
+            fast_full = _ma(price_full, fast, use_ema=False)
+            slow_full = _ma(price_full, slow, use_ema=False)
+            fast_ma = fast_full.loc[ds:de]
+            slow_ma = slow_full.loc[ds:de]
+            traces: list = [
                 go.Scatter(
                     x=fast_ma.index, y=fast_ma, name=f"{fast}d MA", mode="lines",
                     line=dict(color=PALETTE["orange"], width=1, dash="dash"),
@@ -89,6 +145,10 @@ def _ma_overlay_traces(
                     hovertemplate=f"{slow}d MA: %{{y:.2f}}<extra></extra>",
                 ),
             ]
+            cx = _ma_crossover_scatter(fast_full, slow_full, ds, de)
+            if cx is not None:
+                traces.append(cx)
+            return traces
     return []
 
 

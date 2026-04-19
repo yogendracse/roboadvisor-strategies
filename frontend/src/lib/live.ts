@@ -22,6 +22,8 @@ export interface LiveComputeRequest {
   date_start?: string | null;
   date_end?: string | null;
   strategies?: string[];
+  /** Which trend system's MA lines to draw on the price chart (backend default: 30/100 MA). */
+  active_trend_system?: string;
 }
 
 export interface LiveComputeResult {
