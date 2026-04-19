@@ -1,0 +1,7 @@
+packages:
+  - frontend
+
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+  - es5-ext

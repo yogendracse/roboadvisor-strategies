@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# uv
+.python-version
+
+# Node
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# User-added instrument data (fetched at runtime via yfinance)
+backend/data/*.csv
+backend/data/trend/*.csv
+backend/data/_metadata.json
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

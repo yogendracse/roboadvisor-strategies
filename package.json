@@ -1,0 +1,16 @@
+{
+  "name": "vol-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "uv run --directory backend uvicorn app.main:app --reload --port 8787",
+    "dev:web": "pnpm --filter ./frontend dev",
+    "codegen:api": "pnpm --filter ./frontend codegen:api",
+    "build:web": "pnpm --filter ./frontend build",
+    "lint:web": "pnpm --filter ./frontend lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
