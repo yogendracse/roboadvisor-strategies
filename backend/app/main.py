@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, instruments, strategies
+from app.api import health, instruments, live, strategies
 
 app = FastAPI(
     title="Volatility Dashboard API",
@@ -20,3 +20,4 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(instruments.router, prefix="/api")
 app.include_router(strategies.router, prefix="/api")
+app.include_router(live.router, prefix="/api")

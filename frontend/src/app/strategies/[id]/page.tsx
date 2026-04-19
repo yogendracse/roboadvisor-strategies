@@ -25,7 +25,7 @@ export default async function StrategyPage({
             href="/"
             className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
           >
-            ← Strategies
+            ← Home
           </Link>
           <span className="text-zinc-300 dark:text-zinc-700">/</span>
           <h1 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">

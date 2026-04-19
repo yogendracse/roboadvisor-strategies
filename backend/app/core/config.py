@@ -8,8 +8,11 @@ METADATA_PATH = DATA_DIR / "_metadata.json"
 SP500_XLSX = BACKEND_ROOT / "SP data.xlsx"
 TREND_XLSX = BACKEND_ROOT / "TREND_data.xlsx"
 
+LIVE_DATA_DIR = DATA_DIR / "live"
+
 DATA_DIR.mkdir(exist_ok=True)
 TREND_DATA_DIR.mkdir(exist_ok=True)
+LIVE_DATA_DIR.mkdir(exist_ok=True)
 
 SP500_BUILTIN_ID = "sp500-builtin"
 SP500_BUILTIN_LABEL = "S&P 500 (built-in)"
