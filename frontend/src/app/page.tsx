@@ -60,6 +60,31 @@ export default function Home() {
           </Link>
         </section>
 
+        {/* Simulation Engine */}
+        <section>
+          <header className="mb-4">
+            <h2 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Simulation Engine
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Sequential portfolio simulator — live market data, no lookahead bias, full guardrails.
+            </p>
+          </header>
+          <Link
+            href="/simulator"
+            className="block rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-zinc-900 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-50"
+          >
+            <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-50">
+              Portfolio Simulator
+            </h3>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Pick any Yahoo Finance tickers, select equal-weight or inverse-vol weighting,
+              configure circuit-breaker and concentration guardrails, and watch the
+              equity curve, drawdown, rolling Sharpe, and trade log unfold.
+            </p>
+          </Link>
+        </section>
+
       </div>
     </main>
   );
