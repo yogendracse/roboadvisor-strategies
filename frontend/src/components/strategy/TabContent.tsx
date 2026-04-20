@@ -31,7 +31,7 @@ export function TabContent({ tab, isStale = false }: Props) {
       {tab.charts?.map((c) => (
         <div
           key={c.id}
-          className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+          className="flex min-w-0 w-full flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div>
             <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">

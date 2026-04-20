@@ -12,6 +12,7 @@ systems (10/30 MA, 30/100 MA, 80/160 MA, 30-Day Breakout). Four tabs:
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 import numpy as np
@@ -159,18 +160,42 @@ def _trend_metrics(daily_rets: pd.Series) -> dict[str, float]:
     )
 
 
-def _build_portfolio(best_rets: dict[str, pd.Series], lookback_vol: int = 20) -> tuple[pd.Series, pd.Series]:
-    df = pd.concat(best_rets, axis=1).dropna()
+def _build_portfolio(
+    best_rets: dict[str, pd.Series], lookback_vol: int = 20
+) -> tuple[pd.Series, pd.Series, list[str], pd.DataFrame]:
+    """Equal-weight and inverse-vol portfolio returns on a **shared calendar**.
+
+    If there is no single trading day where *every* asset has a return (e.g. some series
+    end before others begin), we drop the asset with the **earliest last date** and retry
+    until an inner join is non-empty or only one series remains.
+    """
+    dropped: list[str] = []
+    if not best_rets:
+        return pd.Series(dtype=float), pd.Series(dtype=float), dropped, pd.DataFrame()
+
+    br = dict(best_rets)
+    df = pd.DataFrame()
+    while True:
+        df = pd.concat(br, axis=1, join="inner", sort=True)
+        if not df.empty:
+            break
+        if len(br) <= 1:
+            break
+        drop_key = min(br.keys(), key=lambda k: br[k].index.max())
+        dropped.append(drop_key)
+        del br[drop_key]
+
     if df.empty:
-        return pd.Series(dtype=float), pd.Series(dtype=float)
+        return pd.Series(dtype=float), pd.Series(dtype=float), dropped, pd.DataFrame()
+
     eq_ret = df.mean(axis=1)
     roll_vol = df.rolling(lookback_vol).std()
     inv_vol = 1.0 / roll_vol.replace(0, np.nan)
     weights = inv_vol.div(inv_vol.sum(axis=1), axis=0)
     iv_ret = (weights.shift(1) * df).sum(axis=1)
     if len(iv_ret) > lookback_vol + 1:
-        iv_ret = iv_ret.iloc[lookback_vol + 1:]
-    return eq_ret, iv_ret
+        iv_ret = iv_ret.iloc[lookback_vol + 1 :]
+    return eq_ret, iv_ret, dropped, df
 
 
 def _top_drawdowns(eq: pd.Series, n: int = 5) -> pd.DataFrame:
@@ -533,30 +558,36 @@ def _chart_signal(
     return _fig_to_dict(fig)
 
 
-def _chart_multi_asset_equity(assets: list[str], per_asset: dict[str, dict]) -> dict:
-    fig = make_subplots(
-        rows=len(assets), cols=1, shared_xaxes=True,
-        subplot_titles=assets, vertical_spacing=0.08,
-    )
-    for ai, aname in enumerate(assets, start=1):
-        for sname in SYSTEM_NAMES:
-            eq = per_asset[aname][sname]["eq"]
-            fig.add_trace(
-                go.Scatter(
-                    x=eq.index, y=eq, name=sname,
-                    legendgroup=sname,
-                    showlegend=(ai == 1),
-                    line=dict(color=SYSTEM_COLOURS[sname], width=1.4),
-                ),
-                row=ai, col=1,
+def _chart_id_slug(label: str) -> str:
+    """Stable id fragment for ChartSpec ids (ASCII slug)."""
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", label.strip()).strip("-").lower()
+    return s or "asset"
+
+
+def _chart_single_asset_equity(asset_name: str, per_system: dict[str, dict]) -> dict:
+    """One simple figure per asset: four system equity curves overlaid (no stacked subplots)."""
+    fig = go.Figure()
+    for sname in SYSTEM_NAMES:
+        eq = per_system[sname]["eq"]
+        if eq is None or (isinstance(eq, pd.Series) and eq.empty):
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=eq.index,
+                y=eq,
+                name=sname,
+                line=dict(color=SYSTEM_COLOURS[sname], width=1.4),
+                hovertemplate=f"{sname}<br>%{{x|%Y-%m-%d}}<br>%{{y:.4f}}<extra></extra>",
             )
-        fig.update_yaxes(title_text="Equity", row=ai, col=1)
+        )
     fig.update_layout(
-        title="System equity curves per asset (all 4 systems overlaid)",
-        height=max(260, 220 * len(assets)),
-        hovermode="x unified", template="plotly_white",
-        legend=dict(orientation="h", y=1.02),
-        margin=dict(t=60, b=20),
+        height=320,
+        hovermode="x unified",
+        template="plotly_white",
+        legend=dict(orientation="h", y=1.12, x=0, font=dict(size=10)),
+        margin=dict(t=40, b=40),
+        xaxis=dict(type="date"),
+        yaxis_title="Equity (normalised)",
     )
     return _fig_to_dict(fig)
 
@@ -985,7 +1016,7 @@ class TrendFollowingStrategy(BaseStrategy):
 
         # ── Portfolio ───────────────────────────────────────────────────────────
         best_rets = {a: per_asset[a][best_per_asset[a]]["net_ret"] for a in asset_names}
-        eq_ret, iv_ret = _build_portfolio(best_rets)
+        eq_ret, iv_ret, dropped_portfolio, aligned_best_rets = _build_portfolio(best_rets)
         eq_eq = np.exp(eq_ret.cumsum()) if not eq_ret.empty else pd.Series(dtype=float)
         iv_eq = np.exp(iv_ret.cumsum()) if not iv_ret.empty else pd.Series(dtype=float)
         eq_dd = eq_eq / eq_eq.cummax() - 1 if not eq_eq.empty else pd.Series(dtype=float)
@@ -993,8 +1024,12 @@ class TrendFollowingStrategy(BaseStrategy):
         eq_m = _trend_metrics(eq_ret)
         iv_m = _trend_metrics(iv_ret)
 
-        # Best-system correlation matrix
-        best_corr = pd.concat(best_rets, axis=1).dropna().corr() if len(best_rets) >= 2 else pd.DataFrame()
+        # Best-system correlation on the **same dates** used for the portfolio combo
+        best_corr = (
+            aligned_best_rets.corr()
+            if not aligned_best_rets.empty and aligned_best_rets.shape[1] >= 2
+            else pd.DataFrame()
+        )
 
         # Pain table — for EW combo (falls back to first asset if empty)
         pain_eq = eq_eq
@@ -1036,21 +1071,25 @@ class TrendFollowingStrategy(BaseStrategy):
             ],
         )
 
+        equity_chart_specs = [
+            ChartSpec(
+                id=f"equity-{_chart_id_slug(aname)}",
+                title=f"{aname} — system equity curves",
+                description=(
+                    "All four systems on one chart for this asset. "
+                    "Curves re-based to 1.0 at the first in-window date after burn-in."
+                ),
+                figure=_chart_single_asset_equity(aname, per_asset[aname]),
+            )
+            for aname in asset_names
+        ]
         tab_backtest = TabSpec(
             id="backtest",
             title="Backtest",
             icon="🔁",
             intro_md=_BACKTEST_GUIDE_MD,
             charts=[
-                ChartSpec(
-                    id="equity-per-asset",
-                    title="System equity curves per asset",
-                    description=(
-                        "Each panel is one asset. All 4 systems are overlaid. "
-                        "Curves re-based to 1.0 at the first in-window date after burn-in."
-                    ),
-                    figure=_chart_multi_asset_equity(asset_names, per_asset),
-                ),
+                *equity_chart_specs,
                 ChartSpec(
                     id="sharpe-bars",
                     title="Sharpe Ratio by System × Asset",
@@ -1180,6 +1219,13 @@ class TrendFollowingStrategy(BaseStrategy):
         )
 
         warnings: list[str] = list(skipped)
+        if dropped_portfolio:
+            warnings.append(
+                "Portfolio & combo metrics use only assets that share at least one common "
+                "trading day with every other included asset. Excluded (no overlap with the "
+                "rest of the basket, dropping earliest-ending series first): "
+                + ", ".join(dropped_portfolio)
+            )
         return StrategyResult(
             overview_md=_OVERVIEW_MD,
             metrics=global_metrics,
