@@ -7,6 +7,7 @@ METADATA_PATH = DATA_DIR / "_metadata.json"
 
 SP500_XLSX = BACKEND_ROOT / "SP data.xlsx"
 TREND_XLSX = BACKEND_ROOT / "TREND_data.xlsx"
+COUNTER_TREND_XLSX = DATA_DIR / "counter-trend" / "COUNTER_TREND_DATA.xlsx"
 
 LIVE_DATA_DIR = DATA_DIR / "live"
 

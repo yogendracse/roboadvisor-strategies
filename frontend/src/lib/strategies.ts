@@ -25,6 +25,14 @@ export const STRATEGIES: StrategyMeta[] = [
     kind: "trend",
     has_summary: false,
   },
+  {
+    id: "counter-trend",
+    name: "Counter Trend",
+    description:
+      "Six counter-trend approaches: Range Exhaustion, Doji Detection, Spread Mean-Reversion, Drawdown Entry, Renko, and ML Enhancement. S&P 500 futures 2003–2021.",
+    kind: "trend",
+    has_summary: false,
+  },
 ];
 
 export function findStrategy(id: string): StrategyMeta | undefined {
