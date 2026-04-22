@@ -17,6 +17,18 @@ comparison.
 
 ---
 
+## Screenshots
+
+| Home | Simulation Engine |
+|---|---|
+| ![Home](docs/screenshots/01-home.png) | ![Simulation Engine](docs/screenshots/02-simulation.png) |
+
+| Live Signals | Counter Trend |
+|---|---|
+| ![Live Signals](docs/screenshots/03-live-signals.png) | ![Counter Trend](docs/screenshots/04-counter-trend.png) |
+
+---
+
 ## Architecture
 
 ```
