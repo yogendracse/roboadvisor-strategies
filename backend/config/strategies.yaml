@@ -1,0 +1,18 @@
+universe:
+  core_etfs: [SPY, QQQ, TLT, IEF, GLD, DBC, VNQ, VXUS]
+
+risk_profiles:
+  conservative:
+    mvo: 0.3
+    risk_parity: 0.7
+  balanced:
+    mvo: 0.5
+    risk_parity: 0.5
+  aggressive:
+    mvo: 0.7
+    risk_parity: 0.3
+
+constraints:
+  max_position: 0.25
+  min_position: 0.01
+  lookback_days: 252

@@ -17,6 +17,8 @@ dependencies = [
     "pyarrow>=17.0",
     "fredapi>=0.5",
     "matplotlib>=3.10.8",
+    "scikit-learn>=1.5",
+    "cvxpy>=1.5",
 ]
 
 [dependency-groups]

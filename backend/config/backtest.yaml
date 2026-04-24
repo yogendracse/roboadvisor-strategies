@@ -1,0 +1,12 @@
+default_backtest:
+  start_date: "2015-01-01"
+  end_date: "2026-04-01"
+  initial_capital: 100000
+  rebalance_freq: "monthly"
+  transaction_cost_bps: 5
+  slippage_bps: 0
+
+benchmarks:
+  - spy_buy_hold
+  - sixty_forty
+  - equal_weight
