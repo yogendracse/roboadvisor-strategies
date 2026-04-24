@@ -4,13 +4,19 @@ A multi-strategy systematic trading dashboard. Strategies are **plugins**: dropp
 Python file into [backend/app/strategies/](backend/app/strategies/) makes it discoverable
 over HTTP and renderable in the UI — no edits anywhere else.
 
-Currently ships with two strategies:
+Currently ships with three strategies and a Robo-Advisor module:
 
 - **Volatility Analysis** — mean-reversion on rolling-vol z-scores (long low-vol / short
   high-vol quintiles). 5 single-instrument tabs + a multi-instrument summary tab.
 - **Trend Following** — four fixed systems (10/30 MA, 30/100 MA, 80/160 MA, 30-day
   breakout) with equal-weight and inverse-volatility portfolio aggregation across a
   basket of assets. 4 tabs.
+- **Counter-Trend** — systematic counter-trend signals on bundled roll-adjusted futures.
+- **Robo-Advisor** *(alpha)* — prediction-market overlay dashboard. Pulls real-money
+  probability signals from Polymarket (recession probability, Fed cut expectations, S&P
+  500 target range) and blends with FRED macro proxies (RECPROUSM156N, FEDFUNDS,
+  DGS10/DGS2/T10Y2Y, VIX) for a full 2000-present history. Data pipeline: yfinance
+  OHLCV, FRED via `fredapi`, Polymarket CLOB API.
 
 The original Streamlit prototype lives in [legacy/](legacy/) for reference / side-by-side
 comparison.
@@ -80,16 +86,35 @@ Volatility/
 │   │   ├── services/
 │   │   │   ├── instrument_service.py     Load / save / list / delete instruments
 │   │   │   └── metadata_service.py       _metadata.json (sector tags)
+│   │   ├── robo_advisor/                 Robo-advisor data pipeline
+│   │   │   ├── data/loaders/
+│   │   │   │   ├── yfinance_loader.py    OHLCV download → prices.csv
+│   │   │   │   ├── fred_loader.py        FRED macro → macro.csv (as_of_date column)
+│   │   │   │   ├── polymarket_loader.py  CLOB price-history fetch (rate-limited)
+│   │   │   │   └── harmonizer.py         Merges Polymarket + FRED → HarmonizedSignal
+│   │   │   └── overlay/
+│   │   │       └── signal_builder.py     Binary / EV signal computation from token histories
 │   │   └── strategies/
 │   │       ├── base.py                   BaseStrategy ABC
 │   │       ├── vol_analysis.py           Vol strategy plugin
-│   │       └── trend_following.py        Trend strategy plugin
+│   │       ├── trend_following.py        Trend strategy plugin
+│   │       └── counter_trend.py          Counter-trend strategy plugin
+│   ├── config/
+│   │   └── polymarket_markets.yaml       Signal definitions + 20 Polymarket token IDs
 │   ├── data/                             User-added vol instrument CSVs + sector metadata
 │   │   ├── *.csv                         (Date, Close) — one per instrument
 │   │   ├── _metadata.json                { "AAPL": { "sector": "Technology" }, … }
-│   │   └── trend/*.csv                   User-added trend instrument CSVs
+│   │   ├── trend/*.csv                   User-added trend instrument CSVs
+│   │   └── robo_advisor/                 Generated data (not committed — run backfill)
+│   │       ├── macro.csv                 FRED series (requires FRED_API_KEY)
+│   │       ├── signals.csv               Polymarket signals (run backfill_polymarket.py)
+│   │       └── prices.csv                yfinance OHLCV (written on first API refresh)
 │   ├── SP data.xlsx                      Built-in S&P 500 (1960–2000) for vol strategy
 │   ├── TREND_data.xlsx                   Built-in Euro FX / 10Y / S&P 500 (1999–2010) for trend
+│   ├── scripts/
+│   │   └── backfill_polymarket.py        Fetches 20 tokens → signals.csv + prints summary
+│   ├── reports/
+│   │   └── polymarket_vs_fred.png        Validation: Polymarket vs FRED proxy overlay
 │   ├── tests/
 │   └── pyproject.toml                    uv-managed
 │
@@ -196,6 +221,45 @@ pnpm codegen:api
 
 This writes [frontend/src/types/api.ts](frontend/src/types/api.ts) from the running
 backend's `/openapi.json`. Requires the backend to be running.
+
+---
+
+## Robo-advisor data pipeline
+
+The robo-advisor module pulls from three sources and harmonises them into a single
+`HarmonizedSignal` schema.
+
+### First-time setup
+
+```bash
+cd backend
+
+# 1. Fetch FRED macro data (requires free API key from fred.stlouisfed.org)
+FRED_API_KEY=<your_key> uv run python -c \
+  "from app.robo_advisor.data.loaders.fred_loader import MacroLoader; MacroLoader().refresh()"
+# → writes backend/data/robo_advisor/macro.csv  (~27k rows, 6 series)
+
+# 2. Fetch Polymarket signals (no API key needed)
+uv run python scripts/backfill_polymarket.py
+# → writes backend/data/robo_advisor/signals.csv  (3 signals, Sep 2025-present)
+
+# 3. Optional — fetch yfinance prices for the default universe
+curl -X POST http://localhost:8787/api/robo-advisor/refresh/prices
+```
+
+Store `FRED_API_KEY` in `backend/.env` (already `.gitignore`d). Neither `macro.csv` nor
+`signals.csv` is committed — they are generated artifacts.
+
+### Signal sources and priority
+
+| Source | Confidence | Coverage |
+|---|---|---|
+| Polymarket CLOB | 1.00 | Sep 2025 – present (daily) |
+| FRED proxy | 0.70 | 2000 – present (monthly) |
+
+Per `(date, signal_name)`, the highest-confidence source wins. The `as_of_date` column
+in `macro.csv` records the FRED release date (not observation date) to prevent lookahead
+bias in backtests.
 
 ---
 
@@ -402,7 +466,7 @@ tone colour.
 
 | Layer       | Choice                                                                        |
 |-------------|-------------------------------------------------------------------------------|
-| Backend     | FastAPI, Pydantic v2, pandas, numpy, Plotly, openpyxl, yfinance, diskcache    |
+| Backend     | FastAPI, Pydantic v2, pandas, numpy, Plotly, openpyxl, yfinance, diskcache, fredapi, matplotlib |
 | Backend dev | uv (env + lockfile), uvicorn (`--reload`), ruff, pytest                       |
 | Frontend    | Next.js 16 (App Router), React 19, TypeScript 5, Tailwind 4                   |
 | Frontend UI | TanStack Query, Zustand, react-plotly.js + plotly.js-dist-min, react-markdown |

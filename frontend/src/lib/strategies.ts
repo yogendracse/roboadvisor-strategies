@@ -33,6 +33,14 @@ export const STRATEGIES: StrategyMeta[] = [
     kind: "trend",
     has_summary: false,
   },
+  {
+    id: "pairs-trading",
+    name: "Pairs Trading",
+    description:
+      "Spread-based pairs trade on two instruments (Black & White). Dickey-Fuller cointegration, multi-horizon signals (N=5/10/20), full position engine, inverse-vol sizing, in-sample vs out-of-sample split, and parameter-sweep overfitting check.",
+    kind: "trend",
+    has_summary: false,
+  },
 ];
 
 export function findStrategy(id: string): StrategyMeta | undefined {

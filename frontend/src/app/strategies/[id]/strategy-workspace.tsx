@@ -20,6 +20,11 @@ import {
   CounterTrendParams,
   type CounterTrendParamValues,
 } from "@/components/strategy/CounterTrendParams";
+import {
+  defaultPairsTradingParams,
+  PairsTradingParams,
+  type PairsTradingParamValues,
+} from "@/components/strategy/PairsTradingParams";
 import { Markdown } from "@/components/ui/Markdown";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { useInstruments } from "@/lib/instruments";
@@ -51,6 +56,8 @@ export function StrategyWorkspace({ strategy }: Props) {
     useState<TrendFollowingParamValues>(defaultTrendParams);
   const [counterTrendParams, setCounterTrendParams] =
     useState<CounterTrendParamValues>(defaultCounterTrendParams);
+  const [pairsParams, setPairsParams] =
+    useState<PairsTradingParamValues>(defaultPairsTradingParams);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   // Compute windows
@@ -103,8 +110,18 @@ export function StrategyWorkspace({ strategy }: Props) {
     if (strategy.id === "counter-trend") {
       return { ...counterTrendParams };
     }
+    if (strategy.id === "pairs-trading") {
+      return { ...pairsParams };
+    }
     return null;
-  }, [strategy.id, activeInst, volParams, trendParams, counterTrendParams]);
+  }, [
+    strategy.id,
+    activeInst,
+    volParams,
+    trendParams,
+    counterTrendParams,
+    pairsParams,
+  ]);
 
   const debouncedBody = useDebouncedValue(computeBody, 300);
   const compute = useComputeQuery(strategy.id, debouncedBody);
@@ -159,7 +176,7 @@ export function StrategyWorkspace({ strategy }: Props) {
   return (
     <div className="flex flex-1 gap-4 p-4">
       <aside className="flex w-72 shrink-0 flex-col gap-4">
-        {strategy.id !== "counter-trend" && (
+        {strategy.id !== "counter-trend" && strategy.id !== "pairs-trading" && (
           <div className="flex flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <InstrumentPicker kind={strategy.kind} />
             {strategy.id === "trend-following" && (
@@ -175,6 +192,15 @@ export function StrategyWorkspace({ strategy }: Props) {
             <p className="text-[11px] text-zinc-500">
               Uses bundled S&amp;P 500 futures data (2003–2021). Parameters below
               apply across all six tabs simultaneously.
+            </p>
+          </div>
+        )}
+        {strategy.id === "pairs-trading" && (
+          <div className="flex flex-col rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="text-[11px] text-zinc-500">
+              Uses <code>Assignment_PAIRS_data.xlsx</code> (Black &amp; White) from{" "}
+              <code>backend/data/pairs/</code>. In-sample = first 1,000 rows;
+              out-of-sample = remainder.
             </p>
           </div>
         )}
@@ -212,6 +238,12 @@ export function StrategyWorkspace({ strategy }: Props) {
             <CounterTrendParams
               value={counterTrendParams}
               onChange={setCounterTrendParams}
+            />
+          )}
+          {strategy.id === "pairs-trading" && (
+            <PairsTradingParams
+              value={pairsParams}
+              onChange={setPairsParams}
             />
           )}
         </div>
@@ -315,6 +347,8 @@ export function StrategyWorkspace({ strategy }: Props) {
               ? "Select an instrument on the left."
               : strategy.id === "counter-trend"
               ? "Computing counter-trend analysis…"
+              : strategy.id === "pairs-trading"
+              ? "Computing pairs trading analysis…"
               : "Loading initial results…"}
           </div>
         )}

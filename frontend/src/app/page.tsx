@@ -85,6 +85,35 @@ export default function Home() {
           </Link>
         </section>
 
+        {/* Robo-Advisor */}
+        <section>
+          <header className="mb-4">
+            <h2 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Robo-Advisor
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              Multi-strategy core portfolio with a tactical overlay driven by prediction market signals (Kalshi / Polymarket).
+            </p>
+          </header>
+          <Link
+            href="/robo-advisor"
+            className="block rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-zinc-900 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-50"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-50">
+                Prediction Market Overlay
+              </h3>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                Alpha
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              MVO + Risk Parity + Factor Model blended core, tilted by Kalshi probabilities for recession,
+              Fed cuts, and S&P direction. Walk-forward backtest with circuit breakers and rebalancing rules.
+            </p>
+          </Link>
+        </section>
+
       </div>
     </main>
   );

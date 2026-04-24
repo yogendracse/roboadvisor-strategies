@@ -26,9 +26,16 @@ backend/data/*.csv
 backend/data/trend/*.csv
 backend/data/_metadata.json
 
+# Robo-advisor generated data (run scripts/backfill_polymarket.py + MacroLoader.refresh())
+backend/data/robo_advisor/
+backend/data/live/*.csv
+
 # macOS
 .DS_Store
 
 # Editor
 .vscode/
 .idea/
+
+# Claude Code plugins (local install, not project code)
+caveman/
