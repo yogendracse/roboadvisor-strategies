@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-Build a robo-advisor that combines a **strategic multi-strategy core portfolio** with a **tactical overlay driven by prediction market signals** (Kalshi / Polymarket). The system should support backtesting, live recommendations, risk management, and a user-facing interface.
+Build a robo-advisor that combines a **strategic multi-strategy core portfolio** with a **tactical overlay driven by prediction market signals** (Polymarket). The system should support backtesting, live recommendations, risk management, and a user-facing interface.
 
 **Key differentiator:** Prediction market probabilities (e.g., P(recession), P(Fed cuts rates)) are used as a tactical tilt on top of a strategic allocation.
 

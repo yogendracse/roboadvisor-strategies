@@ -654,6 +654,98 @@ def run_backtest(body: BacktestRequest) -> BacktestResponse:
     )
 
 
+# ─── Sensitivity regression ───────────────────────────────────────────────────
+
+@router.get("/analysis/regression")
+def get_regression_analysis(
+    window: Literal["fred_proxy", "polymarket", "both"] = "both",
+) -> dict[str, Any]:
+    """
+    Run OLS sensitivity regressions for all signal × asset pairs.
+
+    Window options:
+    - fred_proxy: 2015–Aug 2025, monthly frequency, FRED proxies for recession_prob / fed_cuts
+    - polymarket: Sep 2025–present, daily frequency, actual Polymarket probabilities
+    - both: return both windows + combined summary
+    """
+    from analysis.sensitivity_regression import (
+        SensitivityRegressor,
+        build_api_response,
+        run_both_windows,
+        _FRED_WINDOW_START,
+        _FRED_WINDOW_END,
+        _PM_WINDOW_START,
+    )
+    import yaml
+    from pathlib import Path
+    config_path = Path(__file__).parents[3] / "config" / "overlay.yaml"
+    overlay_cfg = {}
+    if config_path.exists():
+        with open(config_path) as f:
+            overlay_cfg = yaml.safe_load(f) or {}
+
+    reg = SensitivityRegressor(overlay_cfg)
+    today = date.today().isoformat()
+
+    if window == "fred_proxy":
+        fred = reg.run_all(_FRED_WINDOW_START, _FRED_WINDOW_END, window="fred_proxy")
+        pm: dict = {}
+        for sig in fred:
+            pm[sig] = {}
+    elif window == "polymarket":
+        pm = reg.run_all(_PM_WINDOW_START, today, window="polymarket")
+        fred = {}
+        for sig in pm:
+            fred[sig] = {}
+    else:
+        fred, pm = run_both_windows(overlay_cfg)
+
+    return build_api_response(fred, pm, reg, window)
+
+
+# ─── Overlay config PATCH ─────────────────────────────────────────────────────
+
+class OverlayPatchBody(BaseModel):
+    sensitivities: dict[str, dict[str, float]]
+
+
+@router.patch("/config/overlay")
+def patch_overlay_config(body: OverlayPatchBody) -> dict[str, Any]:
+    """
+    Partial-update overlay.yaml sensitivities.
+
+    Only keys provided are updated; all others keep their current values.
+    Backs up existing file to overlay.yaml.bak before writing.
+    Overlay engine reads config at request time — no restart needed.
+    """
+    config_path = Path(__file__).parents[3] / "config" / "overlay.yaml"
+    bak_path = config_path.with_suffix(".yaml.bak")
+
+    import shutil
+    import yaml as _yaml  # type: ignore[import]
+
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="overlay.yaml not found")
+
+    with open(config_path) as f:
+        cfg = _yaml.safe_load(f) or {}
+
+    shutil.copy2(config_path, bak_path)
+
+    signals_cfg = cfg.setdefault("signals", {})
+    for signal_name, asset_betas in body.sensitivities.items():
+        sig_block = signals_cfg.setdefault(signal_name, {})
+        sensitivities = sig_block.setdefault("sensitivities", {})
+        for asset, beta in asset_betas.items():
+            sensitivities[asset] = round(float(beta), 6)
+
+    with open(config_path, "w") as f:
+        _yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+    logger.info("overlay.yaml updated; backup at %s", bak_path)
+    return {"status": "updated", "backup": str(bak_path), "config": cfg}
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _float_or_none(v) -> float | None:

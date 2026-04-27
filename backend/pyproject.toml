@@ -19,6 +19,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "scikit-learn>=1.5",
     "cvxpy>=1.5",
+    "statsmodels>=0.14.6",
 ]
 
 [dependency-groups]

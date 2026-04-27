@@ -98,7 +98,8 @@ export function LinkedPlotlyChart({ figure, height, syncXAxis = false }: Props) 
     <Plot
       data={fig.data}
       layout={layout}
-      onRelayout={handleRelayout as Parameters<typeof Plot>[0]["onRelayout"]}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onRelayout={handleRelayout as any}
       useResizeHandler
       style={{ width: "100%", height: height ? `${height}px` : "100%" }}
       config={{ displaylogo: false, responsive: true }}

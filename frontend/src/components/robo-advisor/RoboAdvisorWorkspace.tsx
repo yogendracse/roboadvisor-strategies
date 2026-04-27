@@ -8,7 +8,7 @@ import { PlotlyChart } from "@/components/charts/PlotlyChart";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "portfolio" | "signals" | "backtest";
+type Tab = "overview" | "portfolio" | "signals" | "backtest" | "analysis";
 
 interface Milestone {
   id: string;
@@ -844,6 +844,398 @@ function BacktestTab() {
   );
 }
 
+// ─── Analysis tab types ───────────────────────────────────────────────────────
+
+interface RegressionAssetResult {
+  excess_return_beta: number | null;
+  alpha: number | null;
+  r_squared: number | null;
+  p_value_hc3: number | null;
+  conf_interval: [number | null, number | null];
+  n_observations: number;
+  significant: boolean;
+  data_source: string;
+  period: string;
+  warning: string | null;
+  configured_sensitivity: number | null;
+  sign_conflict: boolean;
+}
+
+interface RegressionWindowData {
+  [signal: string]: {
+    [asset: string]: RegressionAssetResult;
+  };
+}
+
+interface RegressionSummary {
+  total_regressions: number;
+  significant_count: number;
+  sign_conflicts: number;
+  recommendation: string;
+}
+
+interface RegressionResponse {
+  fred_proxy?: RegressionWindowData;
+  polymarket?: RegressionWindowData;
+  summary: RegressionSummary;
+}
+
+const SIGNAL_DISPLAY: Record<string, string> = {
+  recession_prob: "Recession Prob",
+  fed_cuts_expected: "Fed Cuts Expected",
+  sp500_close_expected: "S&P 500 Close",
+};
+
+const ALL_ASSETS = ["SPY", "QQQ", "TLT", "IEF", "GLD", "DBC", "VNQ", "VXUS"];
+
+function rowColorClass(row: RegressionAssetResult): string {
+  if (row.sign_conflict) return "bg-rose-50 dark:bg-rose-950/20";
+  if (row.significant) return "bg-emerald-50 dark:bg-emerald-950/20";
+  return "";
+}
+
+function actionLabel(row: RegressionAssetResult): { label: string; color: string } {
+  if (row.sign_conflict) return { label: "UPDATE — sign conflict", color: "text-rose-600 font-semibold" };
+  if (row.significant) return { label: "Confirm", color: "text-emerald-600" };
+  return { label: "Wait for data", color: "text-zinc-400" };
+}
+
+function AnalysisTab() {
+  const [windowSel, setWindowSel] = useState<"fred_proxy" | "polymarket">("fred_proxy");
+  const [applyDiff, setApplyDiff] = useState<{ signal: string; asset: string; from: number; to: number }[]>([]);
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [applyStatus, setApplyStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [applyError, setApplyError] = useState<string | null>(null);
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["regression-analysis"],
+    queryFn: () => apiFetch<RegressionResponse>("/api/robo-advisor/analysis/regression?window=both"),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const windowData: RegressionWindowData | undefined =
+    windowSel === "fred_proxy" ? data?.fred_proxy : data?.polymarket;
+
+  // Build flat rows for the comparison table
+  const tableRows: Array<{ signal: string; asset: string; row: RegressionAssetResult }> = [];
+  if (windowData) {
+    for (const signal of ["recession_prob", "fed_cuts_expected", "sp500_close_expected"]) {
+      for (const asset of ALL_ASSETS) {
+        const row = windowData[signal]?.[asset];
+        if (row) tableRows.push({ signal, asset, row });
+      }
+    }
+  }
+
+  const significantRows = tableRows.filter((r) => r.row.significant);
+  const conflictRows = tableRows.filter((r) => r.row.sign_conflict);
+
+  function buildDiff() {
+    return significantRows
+      .filter((r) => r.row.configured_sensitivity !== null && r.row.excess_return_beta !== null)
+      .map((r) => ({
+        signal: r.signal,
+        asset: r.asset,
+        from: r.row.configured_sensitivity as number,
+        to: r.row.excess_return_beta as number,
+      }));
+  }
+
+  async function applyEmpiricalValues() {
+    const diff = buildDiff();
+    setApplyDiff(diff);
+    setShowDiffModal(true);
+  }
+
+  async function confirmApply() {
+    setApplyStatus("loading");
+    setApplyError(null);
+    const sensitivities: Record<string, Record<string, number>> = {};
+    for (const d of applyDiff) {
+      sensitivities[d.signal] ??= {};
+      sensitivities[d.signal][d.asset] = d.to;
+    }
+    try {
+      await apiFetch("/api/robo-advisor/config/overlay", {
+        method: "PATCH",
+        body: JSON.stringify({ sensitivities }),
+      });
+      setApplyStatus("done");
+      setTimeout(() => { setShowDiffModal(false); setApplyStatus("idle"); refetch(); }, 1500);
+    } catch (e) {
+      setApplyStatus("error");
+      setApplyError(e instanceof Error ? e.message : "Apply failed");
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Section A — Summary banner */}
+      <section>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Sensitivity Regression Analysis</h3>
+          <div className="flex gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 p-0.5 bg-white dark:bg-zinc-900">
+            {(["fred_proxy", "polymarket"] as const).map((w) => (
+              <button
+                key={w}
+                onClick={() => setWindowSel(w)}
+                className={`px-3 py-1 text-xs rounded-md transition ${
+                  windowSel === w
+                    ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                    : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                {w === "fred_proxy" ? "FRED proxy (2015–2025)" : "Polymarket (Sep 2025+)"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isLoading && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 animate-pulse">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 h-16" />
+            ))}
+          </div>
+        )}
+        {isError && (
+          <p className="text-xs text-rose-500">Could not load regression analysis. Ensure backend is running.</p>
+        )}
+        {data && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {[
+              { label: "Total Regressions", value: data.summary.total_regressions.toString(), color: "" },
+              { label: "Significant (p < 0.05)", value: `${data.summary.significant_count} / ${data.summary.total_regressions}`, color: "text-emerald-600" },
+              { label: "Sign Conflicts", value: data.summary.sign_conflicts.toString(), color: data.summary.sign_conflicts > 0 ? "text-rose-600 font-bold" : "text-emerald-600" },
+              { label: "Recommendation", value: data.summary.recommendation, color: "text-zinc-600 dark:text-zinc-300" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+                <div className="text-[11px] text-zinc-500 mb-1">{item.label}</div>
+                <div className={`text-sm font-mono font-semibold ${item.color || "text-zinc-900 dark:text-zinc-50"}`}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Section B — Comparison table */}
+      {windowData && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Sensitivity Comparison</h3>
+            <div className="flex gap-2 text-[11px] text-zinc-400">
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300" />confirm</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-300" />wait</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-rose-100 dark:bg-rose-950/40 border border-rose-300" />update</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                  {["Signal", "Asset", "Configured", "Empirical β", "95% CI", "p-value", "N", "Sig", "Action"].map((h) => (
+                    <th key={h} className="px-3 py-2.5 text-left font-medium text-zinc-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map(({ signal, asset, row }, i) => {
+                  const { label, color } = actionLabel(row);
+                  return (
+                    <tr
+                      key={`${signal}-${asset}`}
+                      className={`border-b border-zinc-50 dark:border-zinc-800/50 ${rowColorClass(row)}`}
+                    >
+                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                        {SIGNAL_DISPLAY[signal] ?? signal}
+                      </td>
+                      <td className="px-3 py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{asset}</td>
+                      <td className="px-3 py-2 font-mono text-zinc-500">
+                        {row.configured_sensitivity !== null ? row.configured_sensitivity.toFixed(3) : "—"}
+                      </td>
+                      <td className={`px-3 py-2 font-mono font-semibold ${row.sign_conflict ? "text-rose-600" : row.significant ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-500"}`}>
+                        {row.excess_return_beta !== null ? row.excess_return_beta.toFixed(4) : "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-zinc-400 whitespace-nowrap">
+                        {row.conf_interval[0] !== null && row.conf_interval[1] !== null
+                          ? `[${row.conf_interval[0].toFixed(3)}, ${row.conf_interval[1].toFixed(3)}]`
+                          : "—"}
+                      </td>
+                      <td className={`px-3 py-2 font-mono ${row.significant ? "text-emerald-600" : "text-zinc-400"}`}>
+                        {row.p_value_hc3 !== null ? row.p_value_hc3.toFixed(4) : "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-zinc-400">{row.n_observations}</td>
+                      <td className="px-3 py-2 text-center">{row.significant ? "✓" : ""}</td>
+                      <td className={`px-3 py-2 whitespace-nowrap ${color}`}>{label}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Warning rows */}
+          {tableRows.some((r) => r.row.warning) && (
+            <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+              ⚠ Some rows have n &lt; 60 — treat with caution (Polymarket window is short).
+            </p>
+          )}
+
+          {/* Apply button */}
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              disabled={significantRows.length === 0}
+              onClick={applyEmpiricalValues}
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 transition"
+            >
+              Apply empirical values ({significantRows.length} significant)
+            </button>
+            {conflictRows.length > 0 && (
+              <span className="text-xs text-rose-600">
+                {conflictRows.length} sign conflict{conflictRows.length > 1 ? "s" : ""} — review before applying
+              </span>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Section C — Regression plots */}
+      {windowData && (
+        <section>
+          <h3 className="mb-4 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Beta Charts</h3>
+          <div className="space-y-6">
+            {(["recession_prob", "fed_cuts_expected", "sp500_close_expected"] as const).map((signal) => {
+              const signalData = windowData[signal];
+              if (!signalData) return null;
+              const validAssets = ALL_ASSETS.filter((a) => signalData[a]?.excess_return_beta !== null && signalData[a]?.excess_return_beta !== undefined);
+              if (!validAssets.length) return (
+                <div key={signal} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">{SIGNAL_DISPLAY[signal]}</div>
+                  <p className="text-xs text-zinc-400">No data available for this window.</p>
+                </div>
+              );
+
+              const betas = validAssets.map((a) => signalData[a].excess_return_beta as number);
+              const ciLow = validAssets.map((a) => signalData[a].conf_interval[0] as number);
+              const ciHigh = validAssets.map((a) => signalData[a].conf_interval[1] as number);
+              const configured = validAssets.map((a) => signalData[a].configured_sensitivity);
+              const colors = validAssets.map((a) =>
+                signalData[a].sign_conflict ? "#ef4444" : signalData[a].significant ? "#22c55e" : "#a1a1aa"
+              );
+
+              const figure = {
+                data: [
+                  {
+                    type: "bar",
+                    x: validAssets,
+                    y: betas,
+                    error_y: {
+                      type: "data",
+                      symmetric: false,
+                      array: betas.map((b, i) => ciHigh[i] - b),
+                      arrayminus: betas.map((b, i) => b - ciLow[i]),
+                      visible: true,
+                      color: "#374151",
+                      thickness: 1.5,
+                    },
+                    marker: { color: colors },
+                    name: "Empirical β",
+                    hovertemplate:
+                      "<b>%{x}</b><br>β = %{y:.4f}<br>CI: [%{customdata[0]:.3f}, %{customdata[1]:.3f}]<extra></extra>",
+                    customdata: validAssets.map((_, i) => [ciLow[i], ciHigh[i]]),
+                  },
+                  {
+                    type: "scatter",
+                    x: validAssets.filter((_, i) => configured[i] !== null),
+                    y: validAssets.map((_, i) => configured[i]).filter((v) => v !== null) as number[],
+                    mode: "markers",
+                    marker: { color: "#7c3aed", size: 10, symbol: "circle" },
+                    name: "Configured",
+                  },
+                  {
+                    type: "scatter",
+                    x: [validAssets[0], validAssets[validAssets.length - 1]],
+                    y: [0, 0],
+                    mode: "lines",
+                    line: { color: "#374151", dash: "dash", width: 1 },
+                    name: "Zero",
+                    showlegend: false,
+                  },
+                ],
+                layout: {
+                  title: { text: SIGNAL_DISPLAY[signal], font: { size: 13 } },
+                  xaxis: { title: "Asset" },
+                  yaxis: { title: "β" },
+                  height: 280,
+                  margin: { t: 40, b: 40, l: 50, r: 20 },
+                  legend: { orientation: "h", y: -0.2 },
+                  annotations: [
+                    {
+                      text: `Source: ${windowSel === "fred_proxy" ? "FRED proxy (monthly)" : "Polymarket (daily)"}`,
+                      xref: "paper", yref: "paper",
+                      x: 0, y: -0.35,
+                      showarrow: false,
+                      font: { size: 10, color: "#9ca3af" },
+                    },
+                  ],
+                },
+              };
+
+              return (
+                <div key={signal} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+                  <PlotlyChart figure={figure} height={300} />
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Diff / confirm modal */}
+      {showDiffModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xl">
+            <h4 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 mb-4">
+              Apply Empirical Sensitivities
+            </h4>
+            <p className="text-xs text-zinc-500 mb-3">
+              overlay.yaml will be backed up to overlay.yaml.bak before writing.
+            </p>
+            <div className="max-h-64 overflow-y-auto space-y-1 mb-4">
+              {applyDiff.map((d, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-zinc-500">{SIGNAL_DISPLAY[d.signal] ?? d.signal} / {d.asset}:</span>
+                  <span className="text-rose-500">{d.from.toFixed(3)}</span>
+                  <span className="text-zinc-400">→</span>
+                  <span className="text-emerald-600">{d.to.toFixed(4)}</span>
+                </div>
+              ))}
+            </div>
+            {applyError && (
+              <p className="text-xs text-rose-500 mb-3">{applyError}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={confirmApply}
+                disabled={applyStatus === "loading" || applyStatus === "done"}
+                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 transition"
+              >
+                {applyStatus === "loading" ? "Applying…" : applyStatus === "done" ? "Done ✓" : "Confirm"}
+              </button>
+              <button
+                onClick={() => { setShowDiffModal(false); setApplyStatus("idle"); }}
+                className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main workspace ───────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string }[] = [
@@ -851,6 +1243,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "portfolio", label: "Portfolio Builder" },
   { id: "signals",   label: "Market Signals" },
   { id: "backtest",  label: "Backtest" },
+  { id: "analysis",  label: "Analysis" },
 ];
 
 export function RoboAdvisorWorkspace() {
@@ -884,6 +1277,7 @@ export function RoboAdvisorWorkspace() {
           {activeTab === "portfolio" && <PortfolioTab />}
           {activeTab === "signals"   && <SignalsTab />}
           {activeTab === "backtest"  && <BacktestTab />}
+          {activeTab === "analysis"  && <AnalysisTab />}
         </div>
       </div>
     </div>
